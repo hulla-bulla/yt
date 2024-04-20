@@ -19,7 +19,7 @@ setup(
     install_requires = [requirements],
     python_requires='>=3.10',
     classifiers=[
-        "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
         "Operating System :: Windows",
     ],
     entry_points = '''
