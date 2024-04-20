@@ -2,6 +2,13 @@
 
 A tool using yt-dlp and ffmpeg to download videos. 
 
+
+# to install
+
+pip install git+https://github.com/hulla-bulla/yt.git
+
+not yet packaged to pypi
+
 # for development
 
 1. create venv & activate
