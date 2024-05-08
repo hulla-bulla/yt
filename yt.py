@@ -63,7 +63,12 @@ def dl(url: str, range_str: str):
     click.echo("Done")
 
 
-@cli.command()
+@cli.group()
+def doc():
+    pass
+
+
+@doc.command()
 @click.argument(
     "path",
     type=click.Path(
@@ -76,8 +81,33 @@ def dl(url: str, range_str: str):
 @click.option(
     "-d", "--delimiter", type=str, default="#edit ", help="What to split comments with"
 )
-def comments(path: str, delimiter):
+def comments(path: Path, delimiter):
     google_docs.parse_comments(path, delimiter=delimiter)
+
+
+@doc.command()
+@click.argument(
+    "path",
+    type=click.Path(
+        exists=True,
+        file_okay=True,
+        readable=True,
+        path_type=Path,
+    ),
+)
+@click.option(
+    "-w",
+    "--words-per-minute",
+    "wpm",
+    type=int,
+    default=160,
+    help="How many words per minute to calculate length of script.",
+)
+@click.option(
+    "-d", "--delimiter", type=str, default="#edit ", help="What to remove comments with, to exclude them from the calculation"
+)
+def length(path: Path, wpm, delimiter):
+    google_docs.length(path, words_per_minute=wpm, delimiter=delimiter)
 
 
 def transcribe(channel, query):
@@ -114,7 +144,7 @@ def transcribe(channel, query):
     print(tree)
     pprint(card.inner_html())
 
-    page.epext
+    # page.expect
     grid.wait_for()
 
     page.close()
@@ -122,7 +152,8 @@ def transcribe(channel, query):
 
 
 if __name__ == "__main__":
-    channel = "https://www.youtube.com/@Gdconf"
-    query = "launcher"
+    # channel = "https://www.youtube.com/@Gdconf"
+    # query = "launcher"
 
-    transcribe()
+    # transcribe()
+    cli()

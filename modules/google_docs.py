@@ -11,7 +11,7 @@ from pathlib import Path
 from rich.console import Console
 from rich.table import Table
 from typeguard import typechecked
-import string
+import click
 
 
 class ExcelColumnIterator:
@@ -38,11 +38,70 @@ class ExcelColumnIterator:
 
 
 @typechecked
+def _load_doc(filepath: Path):
+    with open(filepath, "r", encoding="utf-8") as f:
+        raw_data = f.readlines()
+    return raw_data
+
+
+@typechecked
+def length(filepath: Path, words_per_minute=160, delimiter="#edit "):
+    raw_data = _load_doc(filepath)
+
+    words = len([y for x in raw_data for y in x.split()])
+    words_no_bracket = len(
+        [
+            y
+            for x in raw_data
+            for y in x.split()
+            if "[" not in y and "]" not in y and delimiter not in y
+        ]
+    )
+
+    time_length_all = words / words_per_minute
+    time_length_no_bracket = words_no_bracket / words_per_minute
+
+    table = Table(title="Script Length")
+    columns = ["Description", "Value"]
+    for column in columns:
+        table.add_column(column)
+    table.add_section()
+
+
+
+    table.add_row(
+        "Words [All]",
+        str(words),
+        style="bright_blue"
+    )
+    table.add_section()
+    table.add_row(
+        "Words [no brackets (comments)]",
+        str(words_no_bracket),
+        style="bright_blue"
+    )
+    table.add_section()
+    table.add_row(
+        "Words [All]",
+        f"{time_length_all:.1f}",
+        style="bright_blue"
+    )
+    table.add_section()
+    table.add_row(
+        "Words [no brackets (comments)]",
+        f"{time_length_no_bracket:.1f}",
+        style="bright_blue"
+    )
+    table.add_section()
+    console = Console()
+    console.print(table)
+
+
+@typechecked
 def parse_comments(filepath: Path, delimiter="#edit "):
     len_delimiter = len(delimiter)
 
-    with open(filepath, "r", encoding="utf-8") as f:
-        raw_data = f.readlines()
+    raw_data = _load_doc(filepath)
 
     excel_col_gen = ExcelColumnIterator()
     matches = []
@@ -57,7 +116,7 @@ def parse_comments(filepath: Path, delimiter="#edit "):
         # print(f"{i} -> {match}")
         if len(match) < 2:
             continue
-        if not delimiter in match[1]:
+        if delimiter not in match[1]:
             continue
         matches.append((id, *match))
 
@@ -97,7 +156,7 @@ def parse_comments(filepath: Path, delimiter="#edit "):
 
 
 if __name__ == "__main__":
-    filepath_str = r"c:\Users\fred\Downloads\Video - rust game launcher.txt"
+    filepath = r"c:\Users\fred\Downloads\Video - rust game launcher.txt"
     delimiter = "#edit "
 
-    parse_comments(filepath_str, delimiter=delimiter)
+    parse_comments(filepath, delimiter=delimiter)
