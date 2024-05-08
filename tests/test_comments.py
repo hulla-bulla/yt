@@ -34,7 +34,7 @@ def test_comments():
     files = _filepaths_textfiles()
     file = files[0]
     runner = CliRunner()
-    result = runner.invoke(cli, ["comments", str(file)])
+    result = runner.invoke(cli, ["doc", "comments", str(file)])
     print(result.stdout)
 
     assert result.exit_code == 0
