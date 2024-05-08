@@ -1,3 +1,8 @@
 click>=7.1.2
 virtualenv
 yt-dlp
+httpx
+playwright
+selectolax
+rich
+typeguard
