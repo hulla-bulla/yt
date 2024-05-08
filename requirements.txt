@@ -6,3 +6,4 @@ playwright
 selectolax
 rich
 typeguard
+pytest
