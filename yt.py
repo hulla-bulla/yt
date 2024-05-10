@@ -63,12 +63,33 @@ def dl(url: str, range_str: str):
     click.echo("Done")
 
 
-@cli.group()
-def doc():
-    pass
+@cli.group(invoke_without_command=True)
+@click.pass_context
+def doc(ctx):
+    if ctx.invoked_subcommand is None:
+        # click.echo('I was invoked without subcommand')
+        pass
+    else:
+        # click.echo(f"I am about to invoke {ctx.invoked_subcommand}")
+        pass
 
 
-@doc.command()
+@doc.command(name="default")
+@click.argument(
+    "path",
+    type=click.Path(
+        exists=True,
+        file_okay=True,
+        readable=True,
+        path_type=Path,
+    ),
+)
+def doc_default(path: Path):
+    google_docs.parse_comments(path)
+    google_docs.length(path)
+
+
+@doc.command(name="comments")
 @click.argument(
     "path",
     type=click.Path(
@@ -81,11 +102,11 @@ def doc():
 @click.option(
     "-d", "--delimiter", type=str, default="#edit ", help="What to split comments with"
 )
-def comments(path: Path, delimiter):
+def doc_comments(path: Path, delimiter):
     google_docs.parse_comments(path, delimiter=delimiter)
 
 
-@doc.command()
+@doc.command(name="length")
 @click.argument(
     "path",
     type=click.Path(
@@ -104,9 +125,13 @@ def comments(path: Path, delimiter):
     help="How many words per minute to calculate length of script.",
 )
 @click.option(
-    "-d", "--delimiter", type=str, default="#edit ", help="What to remove comments with, to exclude them from the calculation"
+    "-d",
+    "--delimiter",
+    type=str,
+    default="#edit ",
+    help="What to remove comments with, to exclude them from the calculation",
 )
-def length(path: Path, wpm, delimiter):
+def doc_length(path: Path, wpm, delimiter):
     google_docs.length(path, words_per_minute=wpm, delimiter=delimiter)
 
 
