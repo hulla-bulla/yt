@@ -33,20 +33,29 @@ def cli():
 
 def download_video(url: str, range_str: str = None, download_folder: Path = None):
     yt_opts = {
-        "verbose": True,
+        "verbose": False,
         "format": "best[ext=mp4]",
     }
 
-    if download_folder:
-        yt_opts["outtmpl"] = f"{download_folder}/%(title)s.%(ext)s"
-
     if range_str:
         start_time, end_time = convert_range_to_tuple(range_str)
-        # download_ranges are in seconds
+        start_str = f"[{int(start_time // 60):02d}-{int(start_time % 60):02d}]"
+        end_str = f"[{int(end_time // 60):02d}-{int(end_time % 60):02d}]"
+        suffix = f"{start_str}-{end_str}"
+    else:
+        suffix = ""
+    
+    if download_folder:
+        yt_opts["outtmpl"] = f"{download_folder}/%(title)s_{suffix}.%(ext)s"
+    else:
+        yt_opts["outtmpl"] = f"%(title)s_{suffix}.%(ext)s"
+
+    if range_str:
         yt_opts["download_ranges"] = yt_dlp.utils.download_range_func(
             None, [(start_time, end_time)]
         )
         yt_opts["force_keyframes_at_cuts"] = True
+
 
     dlp = yt_dlp.YoutubeDL(yt_opts)
     dlp.download(url)
