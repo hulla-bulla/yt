@@ -150,10 +150,10 @@ def parse_comments(filepath: Path, delimiter="#edit "):
         )
         table.add_section()
         every_other_tracker = not every_other_tracker
-    
+
     table.add_row(
             *[
-                "", 
+                "",
                 f"Number of {delimiter}comments",
                 str(table.row_count),
             ],

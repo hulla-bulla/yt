@@ -31,20 +31,14 @@ def cli():
     pass
 
 
-@cli.command()
-@click.argument("url", type=str, required=True)
-@click.option(
-    "-r",
-    "--range",
-    "range_str",
-    type=str,
-    help="Download range in min:sec as on youtube. Example: 01:11-20:22.",
-)
-def dl(url: str, range_str: str):
+def download_video(url: str, range_str: str = None, download_folder: Path = None):
     yt_opts = {
         "verbose": True,
         "format": "best[ext=mp4]",
     }
+
+    if download_folder:
+        yt_opts["outtmpl"] = f"{download_folder}/%(title)s.%(ext)s"
 
     if range_str:
         start_time, end_time = convert_range_to_tuple(range_str)
@@ -54,12 +48,32 @@ def dl(url: str, range_str: str):
         )
         yt_opts["force_keyframes_at_cuts"] = True
 
-    click.echo("Setting options for yt-dlp")
     dlp = yt_dlp.YoutubeDL(yt_opts)
+    dlp.download(url)
 
+
+@cli.command()
+@click.argument("url", type=str, required=True)
+@click.option(
+    "-r",
+    "--range",
+    "range_str",
+    type=str,
+    help="Download range in min:sec as on youtube. Example: 01:11-20:22.",
+)
+@click.option(
+    "--download-folder",
+    type=click.Path(
+        exists=True,
+        file_okay=False,
+        readable=True,
+        path_type=Path,
+    ),
+)
+def dl(url: str, range_str: str, download_folder: Path):
+    click.echo("Setting options for yt-dlp")
     click.echo(f"Downloading {url}")
-    a = dlp.download(url)
-
+    download_video(url, range_str, download_folder=download_folder)
     click.echo("Done")
 
 
@@ -135,50 +149,121 @@ def doc_length(path: Path, wpm, delimiter):
     google_docs.length(path, words_per_minute=wpm, delimiter=delimiter)
 
 
-def transcribe(channel, query):
+@cli.command()
+@click.argument("channel_url", type=str, required=True)
+@click.argument("query", type=str, required=True)
+@click.option("--clip-length", type=int, default=10, help="Clip length in seconds")
+@click.option(
+    "--download-folder",
+    type=click.Path(
+        exists=True,
+        file_okay=False,
+        readable=True,
+        path_type=Path,
+    ),
+)
+def clips(channel_url: str, query: str, clip_length: int, download_folder: Path):
+    """Finds and downloads clips with the query inside the transcript.
+
+    length is how long the clips should be.  in seconds.
+    """
+    clips = get_clips(channel_url, query)
+
+    for clip in clips:
+        youtube_id = clip["youtube_id"]
+        start_time = clip["start_time"]
+        range_str = f"{start_time}-"  # Assuming you need to calculate the end time based on clip_length
+        start_min, start_sec = map(int, start_time.split(":"))
+        start_total_sec = start_min * 60 + start_sec
+        end_total_sec = start_total_sec + clip_length
+        end_min = end_total_sec // 60
+        end_sec = end_total_sec % 60
+        end_time = f"{end_min:02}:{end_sec:02}"
+        range_str += end_time
+
+        video_url = f"https://www.youtube.com/watch?v={youtube_id}"
+
+        download_video(video_url, range_str, download_folder=download_folder)
+
+
+def get_clips(channel, query, headless=True) -> list[dict[str, str]]:
+    """Finds clips with the query inside the transcript.
+
+    Returns starttime and youtubeid
+
+
+    """
 
     channel = urllib.parse.quote(channel, safe="")
     query = urllib.parse.quote(query, safe="")
     url = f"https://ytks.app/search?url={channel}&query={query}"
 
-    browser = sync_playwright().start()
-    page = browser.chromium.launch(headless=False).new_page(
-        permissions=[
-            "clipboard-read",
-        ]
-    )
-    page.set_default_timeout(2000)
-    page.goto(url)
+    try:
+        print("getting clips..")
 
-    page.get_by_role("button", name="Consent").click()
+        browser = sync_playwright().start()
+        page = browser.chromium.launch(headless=headless).new_page(
+            # permissions=[
+            #     "clipboard-write",
+            #     "clipboard-read",
+            # ]
+            # not needed anymore
+        )
+        page.set_default_timeout(5000)
+        print("Going to url")
+        page.goto(url)
 
-    grid = page.locator(".mantine-SimpleGrid-root")
-    grid.wait_for(timeout=30000)
+        print("Clicking on consent button")
+        page.get_by_role("button", name="Consent").click()
 
-    cards = grid.locator(".mantine-Paper-root")
-    cards.wait_for()
-    cards = cards.all()
+        print("Waiting for things to load... Timeout 60s...", end="")
+        grid = page.locator(".mantine-SimpleGrid-root")
+        grid.wait_for(timeout=60000)
+        print("Done!")
 
-    card = cards[0]
+        print("Parsing cards")
+        cards = grid.locator(".mantine-Paper-root").all()
+        card = cards[0]
 
-    # card.get_by_role("button",name="Copy link to match").click()
-    # a=page.evaluate("navigator.clipboard.readText()")
+        data: list[dict[str, str]] = []
+        for card in cards:
+            # image link
+            try:
+                youtube_id = (
+                    card.locator(".mantine-Image-imageWrapper img")
+                    .first.get_attribute("src")
+                    .split("/")[-2]
+                )
+            except Exception as e:
+                print("Found no image link")
+                raise e
 
-    tree = HTMLParser(card.inner_html())
+            # start time
+            try:
+                start_time = (
+                    card.locator(".mantine-Text-root")
+                    .all()[1]
+                    .text_content()
+                    .split()[0]
+                )
+            except Exception as e:
+                print("Found no starttime")
+                raise e
 
-    print(tree)
-    pprint(card.inner_html())
-
-    # page.expect
-    grid.wait_for()
-
-    page.close()
-    browser.stop()
+            print(f"{start_time} \t {youtube_id}")
+            data.append({"youtube_id": youtube_id, "start_time": start_time})
+    finally:
+        print("Cleanup")
+        page.close()
+        browser.stop()
+    return data
 
 
 if __name__ == "__main__":
     # channel = "https://www.youtube.com/@Gdconf"
     # query = "launcher"
+    # clip_length = 10
+    # headless = True
 
-    # transcribe()
+    # transcribe(channel, query, clip_length=clip_length)
     cli()
