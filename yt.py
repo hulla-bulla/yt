@@ -150,8 +150,8 @@ def doc_length(path: Path, wpm, delimiter):
 
 
 @cli.command()
-@click.argument("channel_url", type=str, required=True)
 @click.argument("query", type=str, required=True)
+@click.argument("channel_url", type=str, required=True)
 @click.option("--clip-length", type=int, default=10, help="Clip length in seconds")
 @click.option(
     "--download-folder",
@@ -165,7 +165,9 @@ def doc_length(path: Path, wpm, delimiter):
 def clips(channel_url: str, query: str, clip_length: int, download_folder: Path):
     """Finds and downloads clips with the query inside the transcript.
 
-    length is how long the clips should be.  in seconds.
+    QUERY What to search youtube for
+    CHANNEL_URL youtube channel/playlist url
+
     """
     clips = get_clips(channel_url, query)
 
