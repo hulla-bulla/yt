@@ -1,5 +1,5 @@
 from pathlib import Path
-from time import sleep
+from time import sleep, time
 import click
 from tqdm import tqdm
 import yt_dlp
@@ -9,6 +9,10 @@ from selectolax.parser import HTMLParser
 
 import urllib.parse
 import httpx
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from queue import Queue
+from threading import Thread
+
 
 from yt_dlp.utils import download_range_func
 from playwright.sync_api import sync_playwright
@@ -171,36 +175,69 @@ def doc_length(path: Path, wpm, delimiter):
         path_type=Path,
     ),
 )
-def clips(urls: tuple, query: str, clip_length: int, download_folder: Path):
+def clips(
+    urls: tuple, query: str, clip_length: int, download_folder: Path, workers: int = 4
+):
     """Finds and downloads clips with the query inside the transcript.
 
     QUERY What to search youtube for
     URLS youtube channel/playlist url (Multiple)
 
     """
+    st = time()
+    clip_queue = Queue()
+    num_clips = 0
 
-    clips = []
-    for url in urls:
-        new_clips = get_clips(url, query)
-        clips.extend(new_clips)
-        print(f"{len(new_clips)} new clips")
-    print(f"{len(clips)} total clips")
+    # Define a function to download a single clip
+    def download_single_clip():
+        while True:
+            clip = clip_queue.get()
+            if clip is None:
+                break
+            youtube_id = clip["youtube_id"]
+            start_time = clip["start_time"]
+            range_str = f"{start_time}-"
+            start_min, start_sec = map(int, start_time.split(":"))
+            start_total_sec = start_min * 60 + start_sec
+            end_total_sec = start_total_sec + clip_length
+            end_min = end_total_sec // 60
+            end_sec = end_total_sec % 60
+            end_time = f"{end_min:02}:{end_sec:02}"
+            range_str += end_time
+            video_url = f"https://www.youtube.com/watch?v={youtube_id}"
+            download_video(video_url, range_str, download_folder=download_folder)
+            clip_queue.task_done()
 
-    for clip in tqdm(clips, desc="Downloading video"):
-        youtube_id = clip["youtube_id"]
-        start_time = clip["start_time"]
-        range_str = f"{start_time}-"  # Assuming you need to calculate the end time based on clip_length
-        start_min, start_sec = map(int, start_time.split(":"))
-        start_total_sec = start_min * 60 + start_sec
-        end_total_sec = start_total_sec + clip_length
-        end_min = end_total_sec // 60
-        end_sec = end_total_sec % 60
-        end_time = f"{end_min:02}:{end_sec:02}"
-        range_str += end_time
+    # Start the downloader threads
+    threads = []
+    for _ in range(workers):
+        thread = Thread(target=download_single_clip)
+        thread.start()
+        threads.append(thread)
 
-        video_url = f"https://www.youtube.com/watch?v={youtube_id}"
+    # Collect clips and add them to the queue
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = [executor.submit(get_clips, url, query) for url in urls]
+        for future in as_completed(futures):
+            new_clips = future.result()
+            for clip in new_clips:
+                clip_queue.put(clip)
+                num_clips += 1
+            print(f"{len(new_clips)} new clips")
 
-        download_video(video_url, range_str, download_folder=download_folder)
+    # Block until all clips are processed
+    clip_queue.join()
+
+    # Stop the downloader threads
+    for _ in range(workers):
+        clip_queue.put(None)
+    for thread in threads:
+        thread.join()
+
+    time_elapsed = time() - st
+    print(f"Num of clips      {num_clips}")
+    print(f"Average time clip {time_elapsed/num_clips:.2f}s")
+    print(f"Total time took   {time_elapsed:.2f}s")
 
 
 def get_clips(url, query, headless=True) -> list[dict[str, str]]:
