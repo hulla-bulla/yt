@@ -1,6 +1,7 @@
 from pathlib import Path
 from time import sleep
 import click
+from tqdm import tqdm
 import yt_dlp
 from pprint import pprint
 from datetime import datetime, timedelta
@@ -44,7 +45,7 @@ def download_video(url: str, range_str: str = None, download_folder: Path = None
         suffix = f"{start_str}-{end_str}"
     else:
         suffix = ""
-    
+
     if download_folder:
         yt_opts["outtmpl"] = f"{download_folder}/%(title)s_{suffix}.%(ext)s"
     else:
@@ -55,7 +56,6 @@ def download_video(url: str, range_str: str = None, download_folder: Path = None
             None, [(start_time, end_time)]
         )
         yt_opts["force_keyframes_at_cuts"] = True
-
 
     dlp = yt_dlp.YoutubeDL(yt_opts)
     dlp.download(url)
@@ -160,7 +160,7 @@ def doc_length(path: Path, wpm, delimiter):
 
 @cli.command()
 @click.argument("query", type=str, required=True)
-@click.argument("channel_url", type=str, required=True)
+@click.argument("urls", type=str, required=True, nargs=-1)
 @click.option("--clip-length", type=int, default=10, help="Clip length in seconds")
 @click.option(
     "--download-folder",
@@ -171,16 +171,22 @@ def doc_length(path: Path, wpm, delimiter):
         path_type=Path,
     ),
 )
-def clips(channel_url: str, query: str, clip_length: int, download_folder: Path):
+def clips(urls: tuple, query: str, clip_length: int, download_folder: Path):
     """Finds and downloads clips with the query inside the transcript.
 
     QUERY What to search youtube for
-    CHANNEL_URL youtube channel/playlist url
+    URLS youtube channel/playlist url (Multiple)
 
     """
-    clips = get_clips(channel_url, query)
 
-    for clip in clips:
+    clips = []
+    for url in urls:
+        new_clips = get_clips(url, query)
+        clips.extend(new_clips)
+        print(f"{len(new_clips)} new clips")
+    print(f"{len(clips)} total clips")
+
+    for clip in tqdm(clips, desc="Downloading video"):
         youtube_id = clip["youtube_id"]
         start_time = clip["start_time"]
         range_str = f"{start_time}-"  # Assuming you need to calculate the end time based on clip_length
@@ -197,7 +203,7 @@ def clips(channel_url: str, query: str, clip_length: int, download_folder: Path)
         download_video(video_url, range_str, download_folder=download_folder)
 
 
-def get_clips(channel, query, headless=True) -> list[dict[str, str]]:
+def get_clips(url, query, headless=True) -> list[dict[str, str]]:
     """Finds clips with the query inside the transcript.
 
     Returns starttime and youtubeid
@@ -205,9 +211,9 @@ def get_clips(channel, query, headless=True) -> list[dict[str, str]]:
 
     """
 
-    channel = urllib.parse.quote(channel, safe="")
+    url = urllib.parse.quote(url, safe="")
     query = urllib.parse.quote(query, safe="")
-    url = f"https://ytks.app/search?url={channel}&query={query}"
+    url = f"https://ytks.app/search?url={url}&query={query}"
 
     try:
         print("getting clips..")
