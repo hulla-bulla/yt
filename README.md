@@ -18,6 +18,8 @@ playwright install
 
 Then run ```yt``` in a terminal to use the app. 
 
+> NOTE: the youtube link needs to be in quotes on windows like -> "https://www.youtube.com/watch?v=FRpq7o1mKXY" instead of https://www.youtube.com/watch?v=FRpq7o1mKXY
+
 ```
 yt --help          # view help
 yt clips --help    # view help for specific command

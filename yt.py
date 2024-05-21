@@ -82,6 +82,7 @@ def download_video(url: str, range_str: str = None, download_folder: Path = None
         readable=True,
         path_type=Path,
     ),
+    default=Path.cwd(),
 )
 def dl(url: str, range_str: str, download_folder: Path):
     click.echo("Setting options for yt-dlp")
@@ -163,6 +164,60 @@ def doc_length(path: Path, wpm, delimiter):
 
 
 @cli.command()
+@click.argument("urls", type=str, nargs=-1, required=True)
+@click.option(
+    "--download-folder",
+    type=click.Path(
+        exists=True,
+        file_okay=False,
+        readable=True,
+        path_type=Path,
+    ),
+    default=Path.cwd(),
+    help="Folder to save the downloaded audio files.",
+)
+@click.option(
+    "--workers",
+    type=int,
+    default=4,
+    help="Number of worker threads to use for downloading.",
+)
+def audio(urls: tuple, download_folder: Path, workers: int):
+    """
+    Downloads YouTube videos and converts them to MP3 audio files.
+
+    URLS: YouTube video URLs (Multiple).
+    """
+    yt_opts = {
+        "format": "bestaudio/best",
+        "postprocessors": [
+            {
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "mp3",
+                "preferredquality": "320",
+            }
+        ],
+        "outtmpl": str(download_folder / "%(title)s.%(ext)s"),
+    }
+
+    if not download_folder.exists():
+        download_folder.mkdir(parents=True)
+
+    def download_audio(url):
+        dlp = yt_dlp.YoutubeDL(yt_opts)
+        click.echo(f"Downloading audio from {url}")
+        dlp.download([url])
+        click.echo(f"Finished downloading audio from {url}")
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = [executor.submit(download_audio, url) for url in urls]
+        for future in as_completed(futures):
+            future.result()
+
+    click.echo("All downloads are complete.")
+
+
+@cli.command()
 @click.argument("query", type=str, required=True)
 @click.argument("urls", type=str, required=True, nargs=-1)
 @click.option("--clip-length", type=int, default=10, help="Clip length in seconds")
@@ -174,6 +229,7 @@ def doc_length(path: Path, wpm, delimiter):
         readable=True,
         path_type=Path,
     ),
+    default=Path.cwd(),
 )
 def clips(
     urls: tuple, query: str, clip_length: int, download_folder: Path, workers: int = 4
