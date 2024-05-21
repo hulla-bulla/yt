@@ -33,8 +33,14 @@ Then run ```yt``` in a terminal to use the app.
 yt --help          # view help
 yt clips --help    # view help for specific command
 
+# download youtube video best quality available
+yt video "https://www.youtube.com/watch?v=wA9MV-93K1I"
+
+# download youtube audio best quality available
+yt audio "https://www.youtube.com/watch?v=wA9MV-93K1I"
+
 # Download a bunch of clips with "rust" as the keyword from playlists and or channels
-yt clips rust "https://www.youtube.com/watch?v=SodXi2t1mtE&pp=ygUJcnVzdCBoeXBl" "https://www.youtube.com/watch?v=NtYHC1KNGoc&t=16s&pp=ygUJcnVzdCBoeXBl" "https://www.youtube.com/@NoBoilerplate" "https://www.youtube.com/@serverlessjames" "https://www.youtube.com/@deno_land"
+yt clips rust "https://www.youtube.com/watch?v=SodXi2t1mtE&pp=ygUJcnVzdCBoeXBl" "https://www.youtube.com/watch?v=NtYHC1KNGoc&t=16s&pp=ygUJcnVzdCBoeXBl" "https://www.youtube.com/@NoBoilerplate"
 ``` 
 
 

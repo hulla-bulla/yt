@@ -39,7 +39,8 @@ def cli():
 def download_video(url: str, range_str: str = None, download_folder: Path = None):
     yt_opts = {
         "verbose": False,
-        "format": "best[ext=mp4]",
+        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]",
+        "merge_output_format": "mp4",
     }
 
     if range_str:
@@ -84,7 +85,7 @@ def download_video(url: str, range_str: str = None, download_folder: Path = None
     ),
     default=Path.cwd(),
 )
-def dl(url: str, range_str: str, download_folder: Path):
+def video(url: str, range_str: str, download_folder: Path):
     click.echo("Setting options for yt-dlp")
     click.echo(f"Downloading {url}")
     download_video(url, range_str, download_folder=download_folder)
