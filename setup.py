@@ -7,7 +7,7 @@ with open("requirements.txt", "r", encoding="utf-8") as fh:
     
 setup(
     name = 'yt',
-    version = '0.0.11',
+    version = '0.0.12',
     author = 'HullaBulla',
     author_email = 'hullabulla666@gmail.com',
     description = 'Youtube download helper using yt-dlp and ffmpeg',
