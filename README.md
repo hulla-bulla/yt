@@ -3,7 +3,9 @@
 A tool using yt-dlp and ffmpeg to download videos. 
 
 
-# How to use
+
+
+# Install
 [Download and install python here](https://www.python.org/downloads/)
 
 Open a terminal and run
@@ -16,6 +18,13 @@ Then run
 playwright install
 ```
 
+To update to the latest version, simply use:
+
+```
+pip install --upgrade git+https://github.com/hulla-bulla/yt.git
+```
+
+# How to use
 Then run ```yt``` in a terminal to use the app. 
 
 > NOTE: the youtube link needs to be in quotes on windows like -> "https://www.youtube.com/watch?v=FRpq7o1mKXY" instead of https://www.youtube.com/watch?v=FRpq7o1mKXY
