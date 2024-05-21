@@ -11,6 +11,11 @@ Open a terminal and run
 pip install git+https://github.com/hulla-bulla/yt.git
 ```
 
+Then run 
+```
+playwright install
+```
+
 Then run ```yt``` in a terminal to use the app. 
 
 ```
