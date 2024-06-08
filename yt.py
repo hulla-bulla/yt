@@ -13,10 +13,30 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from queue import Queue
 from threading import Thread
 
-
+import subprocess
+import sys
 from yt_dlp.utils import download_range_func
 from playwright.sync_api import sync_playwright
 from modules import google_docs
+
+
+try:
+    import imageio_ffmpeg as ffmpeg_lib
+except ImportError:
+    ffmpeg_lib = None
+
+
+def _check_ffmpeg_installed():
+    try:
+        subprocess.run(
+            ["ffmpeg", "-version"],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
 
 
 def convert_range_to_tuple(range_str: str) -> tuple[float, float]:
@@ -368,6 +388,132 @@ def get_clips(url, query, headless=True) -> list[dict[str, str]]:
         page.close()
         browser.stop()
     return data
+
+
+def _get_audio_track_count(file_path: str) -> int:
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "a",
+                "-show_entries",
+                "stream=index",
+                "-of",
+                "csv=p=0",
+                file_path,
+            ],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        audio_tracks = result.stdout.strip().split("\n")
+        return len(audio_tracks)
+    except subprocess.CalledProcessError as e:
+        click.echo(f"Error getting audio track count: {e.stderr}")
+        return 0
+
+
+@cli.command()
+@click.argument(
+    "file_paths",
+    type=click.Path(
+        exists=True,
+        file_okay=True,
+        readable=True,
+        path_type=Path,
+    ),
+    required=True,
+    nargs=-1
+)
+@click.option(
+    "--output-dir",
+    "-o",
+    "output_dir",
+    type=click.Path(
+        exists=False,
+        file_okay=False,
+        readable=True,
+        path_type=Path,
+    ),
+    default=Path.cwd(),
+    help="Output dir, will be created if not exists."
+)
+@click.option(
+    "--delete",
+    "-d",
+    "delete",
+    type=bool,
+    is_flag=True,
+    show_default=True,
+    default=False,
+    help="Delete original file after successful convertion.",
+)
+@click.option(
+    "--no-prompt",
+    "no_prompt",
+    type=bool,
+    is_flag=True,
+    show_default=True,
+    default=False,
+    help="Shows no prompt for example when deleting original file. with --delete flag.",
+)
+def remux(file_paths: tuple[Path], output_dir: Path, delete: bool, no_prompt: bool):
+    """
+    Remuxes the given MKV from OBS video file, splitting audio tracks to separate WAV files and converting the video to MP4.
+
+    FILE_PATH: Path to the video file to remux.
+    """
+    if not _check_ffmpeg_installed():
+        click.echo("FFmpeg is not installed.")
+        return
+
+    output_dir.mkdir(exist_ok=True)
+
+    
+    for file_path in file_paths:
+        audio_track_count = _get_audio_track_count(str(file_path))
+        if audio_track_count == 0:
+            click.echo("No audio tracks found in the file.")
+            return
+
+        filename = Path(file_path).stem
+        output_base = f"{filename}_remux"
+
+        filenames = [
+            f"{output_dir/output_base}.mp4",
+        ]
+        filenames.extend(
+            [f"{output_dir/output_base}_{i+1}.wav" for i in range(audio_track_count)]
+        )
+
+        commands = []
+        for filename in filenames:
+            if filename.endswith(".mp4"):
+                commands.append(f'ffmpeg -i "{file_path}" -c:v copy -c:a aac "{filename}"')
+            elif filename.endswith(".wav"):
+                # get audio track from filename. Kinda reverse but doesn't matter. 0 based so -1 as well.
+                audio_track = int(filename.split(".")[-2].split("_")[-1]) - 1
+                commands.append(
+                    f'ffmpeg -i "{file_path}" -map 0:a:{audio_track} -acodec pcm_s24le "{filename}"'
+                )
+
+        for cmd in commands:
+            click.echo(f"Running command: {cmd}")
+            subprocess.run(cmd, shell=True, check=True)
+            click.echo("Done")
+
+        if delete:
+            click.echo(f"Delete? {file_path}")
+            if no_prompt:
+                file_path.unlink()
+            elif (
+                input("Do you want to delete the original file? y/n: ").strip().lower() == "y"
+            ):
+                file_path.unlink()
 
 
 if __name__ == "__main__":
