@@ -56,62 +56,6 @@ def cli():
     pass
 
 
-def download_video(url: str, range_str: str = None, download_folder: Path = None):
-    yt_opts = {
-        "verbose": False,
-        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]",
-        "merge_output_format": "mp4",
-    }
-
-    if range_str:
-        start_time, end_time = convert_range_to_tuple(range_str)
-        start_str = f"[{int(start_time // 60):02d}-{int(start_time % 60):02d}]"
-        end_str = f"[{int(end_time // 60):02d}-{int(end_time % 60):02d}]"
-        suffix = f"{start_str}-{end_str}"
-    else:
-        suffix = ""
-
-    if download_folder:
-        yt_opts["outtmpl"] = f"{download_folder}/%(title)s_{suffix}.%(ext)s"
-    else:
-        yt_opts["outtmpl"] = f"%(title)s_{suffix}.%(ext)s"
-
-    if range_str:
-        yt_opts["download_ranges"] = yt_dlp.utils.download_range_func(
-            None, [(start_time, end_time)]
-        )
-        yt_opts["force_keyframes_at_cuts"] = True
-
-    dlp = yt_dlp.YoutubeDL(yt_opts)
-    dlp.download(url)
-
-
-@cli.command()
-@click.argument("url", type=str, required=True)
-@click.option(
-    "-r",
-    "--range",
-    "range_str",
-    type=str,
-    help="Download range in min:sec as on youtube. Example: 01:11-20:22.",
-)
-@click.option(
-    "--download-folder",
-    type=click.Path(
-        exists=True,
-        file_okay=False,
-        readable=True,
-        path_type=Path,
-    ),
-    default=Path.cwd(),
-)
-def video(url: str, range_str: str, download_folder: Path):
-    click.echo("Setting options for yt-dlp")
-    click.echo(f"Downloading {url}")
-    download_video(url, range_str, download_folder=download_folder)
-    click.echo("Done")
-
-
 @cli.group(invoke_without_command=True)
 @click.pass_context
 def doc(ctx):
@@ -238,6 +182,79 @@ def audio(urls: tuple, download_folder: Path, workers: int):
     click.echo("All downloads are complete.")
 
 
+
+def download_video(
+    url: str, range_str: str | None = None, download_folder: Path | None = None
+) -> Path:
+    yt_opts = {
+        "verbose": False,
+        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]",
+        "merge_output_format": "mp4",
+    }
+
+    if range_str:
+        start_time, end_time = convert_range_to_tuple(range_str)
+        start_str = f"[{int(start_time // 60):02d}-{int(start_time % 60):02d}]"
+        end_str = f"[{int(end_time // 60):02d}-{int(end_time % 60):02d}]"
+        suffix = f"{start_str}-{end_str}"
+    else:
+        suffix = ""
+
+    if download_folder:
+        yt_opts["outtmpl"] = f"{download_folder}/%(title)s_{suffix}.%(ext)s"
+    else:
+        yt_opts["outtmpl"] = f"%(title)s_{suffix}.%(ext)s"
+
+    if range_str:
+        yt_opts["download_ranges"] = yt_dlp.utils.download_range_func(
+            None, [(start_time, end_time)]
+        )
+        yt_opts["force_keyframes_at_cuts"] = True
+
+    dlp = yt_dlp.YoutubeDL(yt_opts)
+    dlp.download(url)
+
+    # Get the file path of the downloaded file
+    info_dict = dlp.extract_info(url, download=False)
+    output_file = dlp.prepare_filename(info_dict)
+
+    file_path = Path(output_file)
+
+    if not file_path.exists() or not file_path.is_file():
+        click.echo("Can find downloaded file")
+        raise FileNotFoundError(file_path)
+
+    return file_path
+
+
+@cli.command()
+@click.argument("url", type=str, required=True)
+@click.option(
+    "-r",
+    "--range",
+    "range_str",
+    type=str,
+    help="Download range in min:sec as on youtube. Example: 01:11-20:22.",
+)
+@click.option(
+    "--download-folder",
+    type=click.Path(
+        exists=True,
+        file_okay=False,
+        readable=True,
+        path_type=Path,
+    ),
+    default=Path.cwd(),
+)
+def video(url: str, range_str: str, download_folder: Path):
+    click.echo("Setting options for yt-dlp")
+    click.echo(f"Downloading {url}")
+    file_path: Path = download_video(url, range_str, download_folder=download_folder)
+
+    click.echo(f"Downloaded to {file_path}")
+    click.echo("Done")
+
+
 @cli.command()
 @click.argument("query", type=str, required=True)
 @click.argument("urls", type=str, required=True, nargs=-1)
@@ -294,7 +311,7 @@ def clips(
 
     # Collect clips and add them to the queue
     with ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = [executor.submit(get_clips, url, query) for url in urls]
+        futures = [executor.submit(_get_clips, url, query) for url in urls]
         for future in as_completed(futures):
             new_clips = future.result()
             for clip in new_clips:
@@ -317,7 +334,7 @@ def clips(
     print(f"Total time took   {time_elapsed:.2f}s")
 
 
-def get_clips(url, query, headless=True) -> list[dict[str, str]]:
+def _get_clips(url, query, headless=True) -> list[dict[str, str]]:
     """Finds clips with the query inside the transcript.
 
     Returns starttime and youtubeid
@@ -463,7 +480,9 @@ def _get_audio_track_count(file_path: str) -> int:
 )
 def remux(file_paths: tuple[Path], output_dir: Path, delete: bool, no_prompt: bool):
     """
-    Remuxes the given MKV from OBS video file, splitting audio tracks to separate WAV files and converting the video to MP4.
+    Remuxes the given MKV to mp4 and multiple wav files.
+    
+    From OBS video file splitting audio tracks to separate WAV files and converting the video to MP4.
 
     FILE_PATH: Path to the video file to remux.
     """
@@ -598,6 +617,8 @@ def _ffprobe(input_file: Path) -> dict:
     )
     p = subprocess.run(cmd, shell=True, capture_output=True)
     if not p.returncode == 0:
+        print(p.stdout)
+        print(p.stderr)
         raise ValueError(f"ffprobe Got other returncode: {p.returncode}")
 
     data: dict = json.loads(p.stdout)
@@ -607,9 +628,37 @@ def _ffprobe(input_file: Path) -> dict:
     return data
 
 
-def convert_vp9_to_mp4(input_file: Path, output_file: Path):
+def _is_video_vp9(input_file: Path) -> bool:
+    """
+    Checks if the input video file is encoded with the VP9 codec.
+
+    Args:
+        input_file (Path): Path to the input video file.
+
+    Returns:
+        bool: True if the video codec is VP9, False otherwise.
+    """
+    try:
+        data = _ffprobe(input_file)
+        for stream in data.get("streams", []):
+            if (
+                stream.get("codec_type") == "video"
+                and stream.get("codec_name") == "vp9"
+            ):
+                return True
+        return False
+    except Exception as e:
+        print(f"Error checking if video is VP9: {e}")
+        return False
+
+
+def _convert_vp9_to_mp4(input_file: Path, output_file: Path):
     cmd = f'ffmpeg -i "{input_file}" -c:v libx264 -c:a aac {output_file}'
-    subprocess.run(cmd)
+    p = subprocess.run(cmd, shell=True, capture_output=True)
+    if not p.returncode == 0:
+        print(p.stdout)
+        print(p.stderr)
+        raise ValueError(f"convert_vp9_to_mp4 Got other returncode: {p.returncode}")
 
 
 if __name__ == "__main__":
