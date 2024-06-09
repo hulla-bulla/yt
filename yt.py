@@ -18,7 +18,8 @@ import sys
 from yt_dlp.utils import download_range_func
 from playwright.sync_api import sync_playwright
 from modules import google_docs
-
+import json
+import shutil
 
 try:
     import imageio_ffmpeg as ffmpeg_lib
@@ -54,62 +55,6 @@ def convert_range_to_tuple(range_str: str) -> tuple[float, float]:
 @click.group()
 def cli():
     pass
-
-
-def download_video(url: str, range_str: str = None, download_folder: Path = None):
-    yt_opts = {
-        "verbose": False,
-        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]",
-        "merge_output_format": "mp4",
-    }
-
-    if range_str:
-        start_time, end_time = convert_range_to_tuple(range_str)
-        start_str = f"[{int(start_time // 60):02d}-{int(start_time % 60):02d}]"
-        end_str = f"[{int(end_time // 60):02d}-{int(end_time % 60):02d}]"
-        suffix = f"{start_str}-{end_str}"
-    else:
-        suffix = ""
-
-    if download_folder:
-        yt_opts["outtmpl"] = f"{download_folder}/%(title)s_{suffix}.%(ext)s"
-    else:
-        yt_opts["outtmpl"] = f"%(title)s_{suffix}.%(ext)s"
-
-    if range_str:
-        yt_opts["download_ranges"] = yt_dlp.utils.download_range_func(
-            None, [(start_time, end_time)]
-        )
-        yt_opts["force_keyframes_at_cuts"] = True
-
-    dlp = yt_dlp.YoutubeDL(yt_opts)
-    dlp.download(url)
-
-
-@cli.command()
-@click.argument("url", type=str, required=True)
-@click.option(
-    "-r",
-    "--range",
-    "range_str",
-    type=str,
-    help="Download range in min:sec as on youtube. Example: 01:11-20:22.",
-)
-@click.option(
-    "--download-folder",
-    type=click.Path(
-        exists=True,
-        file_okay=False,
-        readable=True,
-        path_type=Path,
-    ),
-    default=Path.cwd(),
-)
-def video(url: str, range_str: str, download_folder: Path):
-    click.echo("Setting options for yt-dlp")
-    click.echo(f"Downloading {url}")
-    download_video(url, range_str, download_folder=download_folder)
-    click.echo("Done")
 
 
 @cli.group(invoke_without_command=True)
@@ -238,6 +183,101 @@ def audio(urls: tuple, download_folder: Path, workers: int):
     click.echo("All downloads are complete.")
 
 
+def download_video(
+    url: str, range_str: str | None = None, download_folder: Path | None = None
+) -> Path:
+    yt_opts = {
+        "verbose": False,
+        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]",
+        "merge_output_format": "mp4",
+    }
+
+    if range_str:
+        start_time, end_time = convert_range_to_tuple(range_str)
+        start_str = f"[{int(start_time // 60):02d}-{int(start_time % 60):02d}]"
+        end_str = f"[{int(end_time // 60):02d}-{int(end_time % 60):02d}]"
+        suffix = f"{start_str}-{end_str}"
+    else:
+        suffix = ""
+
+    if download_folder:
+        yt_opts["outtmpl"] = f"{download_folder}/%(title)s_{suffix}.%(ext)s"
+    else:
+        yt_opts["outtmpl"] = f"%(title)s_{suffix}.%(ext)s"
+
+    if range_str:
+        yt_opts["download_ranges"] = yt_dlp.utils.download_range_func(
+            None, [(start_time, end_time)]
+        )
+        yt_opts["force_keyframes_at_cuts"] = True
+
+    dlp = yt_dlp.YoutubeDL(yt_opts)
+    dlp.download(url)
+
+    # Get the file path of the downloaded file
+    info_dict = dlp.extract_info(url, download=False)
+    output_file = dlp.prepare_filename(info_dict)
+
+    file_path = Path(output_file)
+
+    if not file_path.exists() or not file_path.is_file():
+        click.echo("Can find downloaded file")
+        raise FileNotFoundError(file_path)
+
+    return file_path
+
+
+@cli.command()
+@click.argument("url", type=str, required=True)
+@click.option(
+    "-r",
+    "--range",
+    "range_str",
+    type=str,
+    help="Download range in min:sec as on youtube. Example: 01:11-20:22.",
+)
+@click.option(
+    "--download-folder",
+    "-o",
+    type=click.Path(
+        exists=True,
+        file_okay=False,
+        readable=True,
+        path_type=Path,
+    ),
+    default=Path.cwd(),
+)
+@click.option(
+    "--auto-convert",
+    "auto_convert",
+    type=bool,
+    is_flag=True,
+    show_default=True,
+    default=True,
+    help="Automatically converts to h.264 from VP9. Always downloads best quality.",  # TODO add more output formats like dnxhd
+)
+def video(url: str, range_str: str, download_folder: Path, auto_convert: bool):
+    click.echo("Setting options for yt-dlp")
+    click.echo(f"Downloading {url}")
+    file_path: Path = download_video(url, range_str, download_folder=download_folder)
+
+    click.echo(f"Downloaded to {file_path}")
+
+    if _is_video_vp9(file_path):
+        click.echo("Video is VP9, need to convert to edit with premiere pro")
+        if auto_convert:
+            output_file_path: Path = (
+                file_path.parent / f"{file_path.stem}_converted.mp4"
+            )
+            _convert_vp9_to_mp4(file_path, output_file_path)
+            # TODO remove original file
+
+    else:
+        click.echo("Video is not VP9")
+
+    click.echo("Done")
+
+
 @cli.command()
 @click.argument("query", type=str, required=True)
 @click.argument("urls", type=str, required=True, nargs=-1)
@@ -294,7 +334,7 @@ def clips(
 
     # Collect clips and add them to the queue
     with ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = [executor.submit(get_clips, url, query) for url in urls]
+        futures = [executor.submit(_get_clips, url, query) for url in urls]
         for future in as_completed(futures):
             new_clips = future.result()
             for clip in new_clips:
@@ -317,7 +357,7 @@ def clips(
     print(f"Total time took   {time_elapsed:.2f}s")
 
 
-def get_clips(url, query, headless=True) -> list[dict[str, str]]:
+def _get_clips(url, query, headless=True) -> list[dict[str, str]]:
     """Finds clips with the query inside the transcript.
 
     Returns starttime and youtubeid
@@ -427,7 +467,7 @@ def _get_audio_track_count(file_path: str) -> int:
         path_type=Path,
     ),
     required=True,
-    nargs=-1
+    nargs=-1,
 )
 @click.option(
     "--output-dir",
@@ -440,7 +480,7 @@ def _get_audio_track_count(file_path: str) -> int:
         path_type=Path,
     ),
     default=Path.cwd(),
-    help="Output dir, will be created if not exists."
+    help="Output dir, will be created if not exists.",
 )
 @click.option(
     "--delete",
@@ -463,7 +503,9 @@ def _get_audio_track_count(file_path: str) -> int:
 )
 def remux(file_paths: tuple[Path], output_dir: Path, delete: bool, no_prompt: bool):
     """
-    Remuxes the given MKV from OBS video file, splitting audio tracks to separate WAV files and converting the video to MP4.
+    Remuxes the given MKV to mp4 and multiple wav files.
+
+    From OBS video file splitting audio tracks to separate WAV files and converting the video to MP4.
 
     FILE_PATH: Path to the video file to remux.
     """
@@ -473,7 +515,6 @@ def remux(file_paths: tuple[Path], output_dir: Path, delete: bool, no_prompt: bo
 
     output_dir.mkdir(exist_ok=True)
 
-    
     for file_path in file_paths:
         audio_track_count = _get_audio_track_count(str(file_path))
         if audio_track_count == 0:
@@ -493,7 +534,9 @@ def remux(file_paths: tuple[Path], output_dir: Path, delete: bool, no_prompt: bo
         commands = []
         for filename in filenames:
             if filename.endswith(".mp4"):
-                commands.append(f'ffmpeg -i "{file_path}" -c:v copy -c:a aac "{filename}"')
+                commands.append(
+                    f'ffmpeg -i "{file_path}" -c:v copy -c:a aac "{filename}"'
+                )
             elif filename.endswith(".wav"):
                 # get audio track from filename. Kinda reverse but doesn't matter. 0 based so -1 as well.
                 audio_track = int(filename.split(".")[-2].split("_")[-1]) - 1
@@ -511,9 +554,150 @@ def remux(file_paths: tuple[Path], output_dir: Path, delete: bool, no_prompt: bo
             if no_prompt:
                 file_path.unlink()
             elif (
-                input("Do you want to delete the original file? y/n: ").strip().lower() == "y"
+                input("Do you want to delete the original file? y/n: ").strip().lower()
+                == "y"
             ):
                 file_path.unlink()
+
+
+@cli.command()
+@click.argument(
+    "file_paths",
+    type=click.Path(
+        exists=True,
+        file_okay=True,
+        readable=True,
+        path_type=Path,
+    ),
+    required=True,
+    nargs=-1,
+)
+@click.option(
+    "--output-dir",
+    "-o",
+    "output_dir",
+    type=click.Path(
+        exists=False,
+        file_okay=False,
+        readable=True,
+        path_type=Path,
+    ),
+    default=Path.cwd(),
+    help="Output dir, will be created if not exists.",
+)
+@click.option(
+    "--delete",
+    "-d",
+    "delete",
+    type=bool,
+    is_flag=True,
+    show_default=True,
+    default=False,
+    help="Delete original file after successful convertion.",
+)
+@click.option(
+    "--no-prompt",
+    "no_prompt",
+    type=bool,
+    is_flag=True,
+    show_default=True,
+    default=False,
+    help="Shows no prompt for example when deleting original file. with --delete flag.",
+)
+def auto(file_paths: tuple[Path], output_dir: Path, delete: bool, no_prompt: bool):
+    """Using the auto-editor to automatically remove silence from video clips, even with multiple audiotracks and export to premiere.
+    auto-editor.exe --keep-tracks-separate --edit "audio:threshold=10%%,stream=1" --margin 0.2sec --export premiere %1
+    """
+    raise NotImplementedError
+    cmd = ""
+    subprocess.run(cmd, shell=True, check=True)
+    pass
+
+
+@cli.command()
+@click.argument(
+    "file_path",
+    type=click.Path(
+        exists=True,
+        file_okay=True,
+        readable=True,
+        path_type=Path,
+    ),
+    required=True,
+)
+def probe(file_path: Path):
+    """probe video file using ffprobe and output to json"""
+    data = _ffprobe(file_path)
+    click.echo(json.dumps(data))
+
+
+def _ffprobe(input_file: Path) -> dict:
+    if not input_file.exists() or not input_file.is_file():
+        raise TypeError("ffprobe Inputfile doesn't exist or is not file")
+
+    cmd = (
+        f'ffprobe -v error -show_format -show_streams -print_format json "{input_file}"'
+    )
+    p = subprocess.run(cmd, shell=True, capture_output=True)
+    if not p.returncode == 0:
+        print(p.stdout)
+        print(p.stderr)
+        raise ValueError(f"ffprobe Got other returncode: {p.returncode}")
+
+    data: dict = json.loads(p.stdout)
+
+    if not data:
+        raise ValueError(f"ffprobe Got no data: {p.returncode}")
+    return data
+
+
+def _is_video_vp9(input_file: Path) -> bool:
+    """
+    Checks if the input video file is encoded with the VP9 codec.
+
+    Args:
+        input_file (Path): Path to the input video file.
+
+    Returns:
+        bool: True if the video codec is VP9, False otherwise.
+    """
+    try:
+        data = _ffprobe(input_file)
+        for stream in data.get("streams", []):
+            if (
+                stream.get("codec_type") == "video"
+                and stream.get("codec_name") == "vp9"
+            ):
+                return True
+        return False
+    except Exception as e:
+        print(f"Error checking if video is VP9: {e}")
+        return False
+
+
+def _convert_vp9_to_mp4(
+    input_file: Path, output_file: Path, auto_delete_input_file_after_success=True
+):
+    click.echo("#" * 50)
+    click.echo("Converting from VP9 to h.264...")
+    click.echo(f"{input_file} -> {output_file}")
+    cmd = f'ffmpeg -i "{input_file}" -c:v libx264 -c:a aac "{output_file}"'
+    p = subprocess.run(cmd, shell=True, capture_output=True)
+    if not p.returncode == 0:
+        print(p.stdout)
+        print(p.stderr)
+        raise ValueError(f"convert_vp9_to_mp4 Got other returncode: {p.returncode}")
+
+    if auto_delete_input_file_after_success:
+        click.echo(f"Cleanup {input_file}")
+        input_file.unlink()
+
+        final_path = input_file.parent / f"{input_file.stem}{output_file.suffix}"
+
+        click.echo(f"Moving converted file {output_file} -> {final_path}")
+        output_file.rename(
+            final_path
+        )
 
 
 if __name__ == "__main__":
