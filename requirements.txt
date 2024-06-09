@@ -8,3 +8,4 @@ rich
 typeguard
 pytest
 imageio[ffmpeg]
+auto-editor

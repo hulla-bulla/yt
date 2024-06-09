@@ -18,7 +18,7 @@ import sys
 from yt_dlp.utils import download_range_func
 from playwright.sync_api import sync_playwright
 from modules import google_docs
-
+import json
 
 try:
     import imageio_ffmpeg as ffmpeg_lib
@@ -427,7 +427,7 @@ def _get_audio_track_count(file_path: str) -> int:
         path_type=Path,
     ),
     required=True,
-    nargs=-1
+    nargs=-1,
 )
 @click.option(
     "--output-dir",
@@ -440,7 +440,7 @@ def _get_audio_track_count(file_path: str) -> int:
         path_type=Path,
     ),
     default=Path.cwd(),
-    help="Output dir, will be created if not exists."
+    help="Output dir, will be created if not exists.",
 )
 @click.option(
     "--delete",
@@ -473,7 +473,6 @@ def remux(file_paths: tuple[Path], output_dir: Path, delete: bool, no_prompt: bo
 
     output_dir.mkdir(exist_ok=True)
 
-    
     for file_path in file_paths:
         audio_track_count = _get_audio_track_count(str(file_path))
         if audio_track_count == 0:
@@ -493,7 +492,9 @@ def remux(file_paths: tuple[Path], output_dir: Path, delete: bool, no_prompt: bo
         commands = []
         for filename in filenames:
             if filename.endswith(".mp4"):
-                commands.append(f'ffmpeg -i "{file_path}" -c:v copy -c:a aac "{filename}"')
+                commands.append(
+                    f'ffmpeg -i "{file_path}" -c:v copy -c:a aac "{filename}"'
+                )
             elif filename.endswith(".wav"):
                 # get audio track from filename. Kinda reverse but doesn't matter. 0 based so -1 as well.
                 audio_track = int(filename.split(".")[-2].split("_")[-1]) - 1
@@ -511,9 +512,106 @@ def remux(file_paths: tuple[Path], output_dir: Path, delete: bool, no_prompt: bo
             if no_prompt:
                 file_path.unlink()
             elif (
-                input("Do you want to delete the original file? y/n: ").strip().lower() == "y"
+                input("Do you want to delete the original file? y/n: ").strip().lower()
+                == "y"
             ):
                 file_path.unlink()
+
+
+@cli.command()
+@click.argument(
+    "file_paths",
+    type=click.Path(
+        exists=True,
+        file_okay=True,
+        readable=True,
+        path_type=Path,
+    ),
+    required=True,
+    nargs=-1,
+)
+@click.option(
+    "--output-dir",
+    "-o",
+    "output_dir",
+    type=click.Path(
+        exists=False,
+        file_okay=False,
+        readable=True,
+        path_type=Path,
+    ),
+    default=Path.cwd(),
+    help="Output dir, will be created if not exists.",
+)
+@click.option(
+    "--delete",
+    "-d",
+    "delete",
+    type=bool,
+    is_flag=True,
+    show_default=True,
+    default=False,
+    help="Delete original file after successful convertion.",
+)
+@click.option(
+    "--no-prompt",
+    "no_prompt",
+    type=bool,
+    is_flag=True,
+    show_default=True,
+    default=False,
+    help="Shows no prompt for example when deleting original file. with --delete flag.",
+)
+def auto(file_paths: tuple[Path], output_dir: Path, delete: bool, no_prompt: bool):
+    """Using the auto-editor to automatically remove silence from video clips, even with multiple audiotracks and export to premiere.
+    auto-editor.exe --keep-tracks-separate --edit "audio:threshold=10%%,stream=1" --margin 0.2sec --export premiere %1
+    """
+    raise NotImplementedError
+    cmd = ""
+    subprocess.run(cmd, shell=True, check=True)
+    pass
+
+
+@cli.command()
+@click.argument(
+    "file_paths",
+    type=click.Path(
+        exists=True,
+        file_okay=True,
+        readable=True,
+        path_type=Path,
+    ),
+    required=True,
+    nargs=-1,
+)
+def probe(file_paths: tuple[Path]):
+    """probe video file using ffprobe and output to json"""
+    for file_path in file_paths:
+        data = _ffprobe(file_path)
+        click.echo(json.dumps(data))
+
+
+def _ffprobe(input_file: Path) -> dict:
+    if not input_file.exists() or not input_file.is_file():
+        raise TypeError("ffprobe Inputfile doesn't exist or is not file")
+
+    cmd = (
+        f'ffprobe -v error -show_format -show_streams -print_format json "{input_file}"'
+    )
+    p = subprocess.run(cmd, shell=True, capture_output=True)
+    if not p.returncode == 0:
+        raise ValueError(f"ffprobe Got other returncode: {p.returncode}")
+
+    data: dict = json.loads(p.stdout)
+
+    if not data:
+        raise ValueError(f"ffprobe Got no data: {p.returncode}")
+    return data
+
+
+def convert_vp9_to_mp4(input_file: Path, output_file: Path):
+    cmd = f'ffmpeg -i "{input_file}" -c:v libx264 -c:a aac {output_file}'
+    subprocess.run(cmd)
 
 
 if __name__ == "__main__":
