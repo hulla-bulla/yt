@@ -574,7 +574,7 @@ def auto(file_paths: tuple[Path], output_dir: Path, delete: bool, no_prompt: boo
 
 @cli.command()
 @click.argument(
-    "file_paths",
+    "file_path",
     type=click.Path(
         exists=True,
         file_okay=True,
@@ -582,13 +582,11 @@ def auto(file_paths: tuple[Path], output_dir: Path, delete: bool, no_prompt: boo
         path_type=Path,
     ),
     required=True,
-    nargs=-1,
 )
-def probe(file_paths: tuple[Path]):
+def probe(file_path: Path):
     """probe video file using ffprobe and output to json"""
-    for file_path in file_paths:
-        data = _ffprobe(file_path)
-        click.echo(json.dumps(data))
+    data = _ffprobe(file_path)
+    click.echo(json.dumps(data))
 
 
 def _ffprobe(input_file: Path) -> dict:
