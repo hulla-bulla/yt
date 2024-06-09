@@ -2,6 +2,16 @@
 
 A tool using yt-dlp and ffmpeg to download videos.
 
+## Features
+
+* **Download YouTube Videos**: Download videos from YouTube in the best quality available.
+* **Audio Extraction**: Extract audio from YouTube videos and save them as high-quality MP3 files.
+* **Clip Downloading**: Download specific clips from YouTube videos based on search queries within video transcripts.
+* **VP9 to H.264 Conversion**: Automatically convert videos encoded with VP9 to H.264, ensuring compatibility with editing software like Premiere Pro.
+* **Batch Remuxing**: Remux OBS recordings or other video files, splitting audio tracks into separate WAV files and converting the video to MP4.
+* **Google Docs Integration**: Parse comments and calculate script length from Google Docs exported text files.
+
+
 ## Install
 
 1. [Download and install python here](https://www.python.org/downloads/)
