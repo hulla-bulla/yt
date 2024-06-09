@@ -19,6 +19,7 @@ from yt_dlp.utils import download_range_func
 from playwright.sync_api import sync_playwright
 from modules import google_docs
 import json
+import shutil
 
 try:
     import imageio_ffmpeg as ffmpeg_lib
@@ -182,7 +183,6 @@ def audio(urls: tuple, download_folder: Path, workers: int):
     click.echo("All downloads are complete.")
 
 
-
 def download_video(
     url: str, range_str: str | None = None, download_folder: Path | None = None
 ) -> Path:
@@ -238,6 +238,7 @@ def download_video(
 )
 @click.option(
     "--download-folder",
+    "-o",
     type=click.Path(
         exists=True,
         file_okay=False,
@@ -246,12 +247,34 @@ def download_video(
     ),
     default=Path.cwd(),
 )
-def video(url: str, range_str: str, download_folder: Path):
+@click.option(
+    "--auto-convert",
+    "auto_convert",
+    type=bool,
+    is_flag=True,
+    show_default=True,
+    default=True,
+    help="Automatically converts to h.264 from VP9. Always downloads best quality.",  # TODO add more output formats like dnxhd
+)
+def video(url: str, range_str: str, download_folder: Path, auto_convert: bool):
     click.echo("Setting options for yt-dlp")
     click.echo(f"Downloading {url}")
     file_path: Path = download_video(url, range_str, download_folder=download_folder)
 
     click.echo(f"Downloaded to {file_path}")
+
+    if _is_video_vp9(file_path):
+        click.echo("Video is VP9, need to convert to edit with premiere pro")
+        if auto_convert:
+            output_file_path: Path = (
+                file_path.parent / f"{file_path.stem}_converted.mp4"
+            )
+            _convert_vp9_to_mp4(file_path, output_file_path)
+            # TODO remove original file
+
+    else:
+        click.echo("Video is not VP9")
+
     click.echo("Done")
 
 
@@ -481,7 +504,7 @@ def _get_audio_track_count(file_path: str) -> int:
 def remux(file_paths: tuple[Path], output_dir: Path, delete: bool, no_prompt: bool):
     """
     Remuxes the given MKV to mp4 and multiple wav files.
-    
+
     From OBS video file splitting audio tracks to separate WAV files and converting the video to MP4.
 
     FILE_PATH: Path to the video file to remux.
@@ -652,13 +675,29 @@ def _is_video_vp9(input_file: Path) -> bool:
         return False
 
 
-def _convert_vp9_to_mp4(input_file: Path, output_file: Path):
-    cmd = f'ffmpeg -i "{input_file}" -c:v libx264 -c:a aac {output_file}'
+def _convert_vp9_to_mp4(
+    input_file: Path, output_file: Path, auto_delete_input_file_after_success=True
+):
+    click.echo("#" * 50)
+    click.echo("Converting from VP9 to h.264...")
+    click.echo(f"{input_file} -> {output_file}")
+    cmd = f'ffmpeg -i "{input_file}" -c:v libx264 -c:a aac "{output_file}"'
     p = subprocess.run(cmd, shell=True, capture_output=True)
     if not p.returncode == 0:
         print(p.stdout)
         print(p.stderr)
         raise ValueError(f"convert_vp9_to_mp4 Got other returncode: {p.returncode}")
+
+    if auto_delete_input_file_after_success:
+        click.echo(f"Cleanup {input_file}")
+        input_file.unlink()
+
+        final_path = input_file.parent / f"{input_file.stem}{output_file.suffix}"
+
+        click.echo(f"Moving converted file {output_file} -> {final_path}")
+        output_file.rename(
+            final_path
+        )
 
 
 if __name__ == "__main__":
